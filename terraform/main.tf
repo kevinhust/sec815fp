@@ -191,7 +191,7 @@ resource "aws_route_table_association" "siem_private_rta" {
 # Security Group for EKS Cluster
 resource "aws_security_group" "siem_cluster_sg" {
   name_prefix = "${var.cluster_name}-cluster-sg"
-  vpc_id      = data.aws_vpc.siem_vpc.id
+  vpc_id      = aws_vpc.siem_vpc.id
 
   egress {
     from_port   = 0
@@ -209,7 +209,7 @@ resource "aws_security_group" "siem_cluster_sg" {
 # Security Group for EKS Worker Nodes
 resource "aws_security_group" "siem_node_sg" {
   name_prefix = "${var.cluster_name}-node-sg"
-  vpc_id      = data.aws_vpc.siem_vpc.id
+  vpc_id      = aws_vpc.siem_vpc.id
 
   ingress {
     from_port = 0
@@ -411,7 +411,7 @@ resource "aws_key_pair" "siem_key" {
 # Security Group for EC2 instances
 resource "aws_security_group" "siem_ec2_sg" {
   name_prefix = "${var.cluster_name}-ec2-sg"
-  vpc_id      = data.aws_vpc.siem_vpc.id
+  vpc_id      = aws_vpc.siem_vpc.id
 
   # SSH access
   ingress {
@@ -557,7 +557,7 @@ resource "aws_instance" "client_2" {
 # Outputs
 output "vpc_id" {
   description = "ID of the VPC where the cluster is deployed"
-  value       = data.aws_vpc.siem_vpc.id
+  value       = aws_vpc.siem_vpc.id
 }
 
 output "siem_server_public_ip" {
