@@ -394,7 +394,204 @@ output "node_groups" {
   value       = aws_eks_node_group.siem_nodes.arn
 }
 
+# Key Pair for EC2 instances
+resource "aws_key_pair" "siem_key" {
+  key_name   = "${var.cluster_name}-key"
+  public_key = file("${path.module}/../siem-key.pub")
+
+  tags = {
+    Name    = "${var.cluster_name}-key-pair"
+    Project = "SIEM"
+  }
+}
+
+# Security Group for EC2 instances
+resource "aws_security_group" "siem_ec2_sg" {
+  name_prefix = "${var.cluster_name}-ec2-sg"
+  vpc_id      = aws_vpc.siem_vpc.id
+
+  # SSH access
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP access for Splunk Universal Forwarder
+  ingress {
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  # Splunk forwarder port
+  ingress {
+    from_port   = 9997
+    to_port     = 9997
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name    = "${var.cluster_name}-ec2-sg"
+    Project = "SIEM"
+  }
+}
+
+# AMI data source for Amazon Linux 2
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# SIEM Server EC2 Instance (for demonstration/monitoring)
+resource "aws_instance" "siem_server" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.medium"
+  key_name               = aws_key_pair.siem_key.key_name
+  subnet_id              = aws_subnet.siem_public_subnets[0].id
+  vpc_security_group_ids = [aws_security_group.siem_ec2_sg.id]
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 20
+    encrypted   = true
+  }
+
+  user_data = base64encode(templatefile("${path.module}/userdata/siem-server.sh", {
+    cluster_name = var.cluster_name
+  }))
+
+  tags = {
+    Name                = "${var.cluster_name}-siem-server"
+    Project             = "SIEM"
+    Role                = "SIEM-Server"
+    Environment         = "Production"
+    MonitoringTarget    = "true"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+  }
+}
+
+# Client Instance 1 (for log generation and testing)
+resource "aws_instance" "client_1" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.micro"
+  key_name               = aws_key_pair.siem_key.key_name
+  subnet_id              = aws_subnet.siem_public_subnets[0].id
+  vpc_security_group_ids = [aws_security_group.siem_ec2_sg.id]
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 10
+    encrypted   = true
+  }
+
+  user_data = base64encode(templatefile("${path.module}/userdata/client.sh", {
+    cluster_name = var.cluster_name
+    client_name  = "client-1"
+  }))
+
+  tags = {
+    Name                = "${var.cluster_name}-client-1"
+    Project             = "SIEM"
+    Role                = "Log-Source"
+    Environment         = "Production"
+    MonitoringTarget    = "true"
+    ClientType          = "Web-Server"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+  }
+}
+
+# Client Instance 2 (for log generation and testing)
+resource "aws_instance" "client_2" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.micro"
+  key_name               = aws_key_pair.siem_key.key_name
+  subnet_id              = aws_subnet.siem_public_subnets[1].id
+  vpc_security_group_ids = [aws_security_group.siem_ec2_sg.id]
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 10
+    encrypted   = true
+  }
+
+  user_data = base64encode(templatefile("${path.module}/userdata/client.sh", {
+    cluster_name = var.cluster_name
+    client_name  = "client-2"
+  }))
+
+  tags = {
+    Name                = "${var.cluster_name}-client-2"
+    Project             = "SIEM"
+    Role                = "Log-Source"
+    Environment         = "Production"
+    MonitoringTarget    = "true"
+    ClientType          = "Database-Server"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+  }
+}
+
+# Outputs
 output "vpc_id" {
   description = "ID of the VPC where the cluster is deployed"
   value       = aws_vpc.siem_vpc.id
+}
+
+output "siem_server_public_ip" {
+  description = "Public IP address of the SIEM server"
+  value       = aws_instance.siem_server.public_ip
+}
+
+output "siem_server_private_ip" {
+  description = "Private IP address of the SIEM server"
+  value       = aws_instance.siem_server.private_ip
+}
+
+output "client_1_public_ip" {
+  description = "Public IP address of client 1"
+  value       = aws_instance.client_1.public_ip
+}
+
+output "client_1_private_ip" {
+  description = "Private IP address of client 1"
+  value       = aws_instance.client_1.private_ip
+}
+
+output "client_2_public_ip" {
+  description = "Public IP address of client 2"
+  value       = aws_instance.client_2.public_ip
+}
+
+output "client_2_private_ip" {
+  description = "Private IP address of client 2"
+  value       = aws_instance.client_2.private_ip
+}
+
+output "ssh_connection_commands" {
+  description = "SSH commands to connect to instances"
+  value = {
+    siem_server = "ssh -i siem-key.pem ec2-user@${aws_instance.siem_server.public_ip}"
+    client_1    = "ssh -i siem-key.pem ec2-user@${aws_instance.client_1.public_ip}"
+    client_2    = "ssh -i siem-key.pem ec2-user@${aws_instance.client_2.public_ip}"
+  }
 }

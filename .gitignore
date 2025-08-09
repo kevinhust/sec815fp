@@ -24,3 +24,8 @@ node_modules/
 # OS specific
 .DS_Store
 sec815key.pem
+siem-key
+siem-key.pem
+*.pem
+*.key
+!*.pub
