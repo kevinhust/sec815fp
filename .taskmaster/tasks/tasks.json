@@ -1,0 +1,179 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "created": "2024-12-19",
+    "lastModified": "2024-12-19",
+    "projectName": "SIEM Implementation Project",
+    "description": "Splunk SIEM系统部署和配置项目，实现组织安全事件的集中化监控、分析与响应能力"
+  },
+  "tags": {
+    "master": {
+      "metadata": {
+        "created": "2024-12-19",
+        "description": "SIEM项目主要任务分支"
+      },
+      "tasks": [
+        {
+          "id": "1",
+          "title": "AWS基础设施设置和准备",
+          "description": "建立AWS EKS集群和相关基础设施，为Splunk SIEM系统部署做准备",
+          "status": "pending",
+          "priority": "high",
+          "details": "使用Terraform或CloudFormation创建AWS EKS集群、VPC、安全组、IAM角色等基础设施组件，配置网络和存储策略",
+          "testStrategy": "验证EKS集群健康状态、节点连通性、EBS存储可用性、IAM权限等基础功能",
+          "dependencies": []
+        },
+        {
+          "id": "2", 
+          "title": "GitHub Actions CI/CD管道配置",
+          "description": "设置GitHub Actions工作流，实现自动化部署到AWS EKS集群",
+          "status": "pending",
+          "priority": "high",
+          "details": "创建GitHub Actions工作流文件，配置AWS凭证、kubectl访问、Helm部署等自动化流程，设置环境分离（dev/staging/prod）",
+          "testStrategy": "验证GitHub Actions能够成功连接到AWS EKS集群并执行部署操作",
+          "dependencies": ["1"]
+        },
+        {
+          "id": "3", 
+          "title": "Splunk Operator部署",
+          "description": "通过GitHub Actions在EKS集群中部署Splunk Operator",
+          "status": "pending",
+          "priority": "high",
+          "details": "使用GitHub Actions自动化部署Splunk Operator，设置RBAC权限，配置自定义资源定义(CRDs)",
+          "testStrategy": "验证Operator通过CI/CD正常部署并运行，可以创建和管理Splunk实例",
+          "dependencies": ["2"]
+        },
+        {
+          "id": "4",
+          "title": "Splunk Enterprise实例部署",
+          "description": "使用Splunk Operator部署Splunk Enterprise实例，配置高可用性",
+          "status": "pending", 
+          "priority": "high",
+          "details": "创建Splunk Enterprise实例，配置集群模式、索引器和搜索头，设置AWS EBS持久化存储",
+          "testStrategy": "验证Splunk实例正常启动，Web界面可通过ALB访问，基本功能正常",
+          "dependencies": ["3"]
+        },
+        {
+          "id": "5",
+          "title": "系统监控和健康检查",
+          "description": "实现Splunk系统的监控和自动健康检查机制",
+          "status": "pending",
+          "priority": "medium", 
+          "details": "配置CloudWatch监控指标、告警规则、健康检查端点，实现自动故障检测和恢复",
+          "testStrategy": "模拟系统故障，验证CloudWatch告警和自动恢复机制",
+          "dependencies": ["4"]
+        },
+        {
+          "id": "6",
+          "title": "AWS CloudTrail集成",
+          "description": "配置AWS CloudTrail与Splunk的集成，实现云审计日志的实时收集",
+          "status": "pending",
+          "priority": "high",
+          "details": "设置AWS CloudTrail API集成，配置数据输入、解析规则和索引策略，使用AWS IAM角色进行安全访问",
+          "testStrategy": "验证CloudTrail事件能够实时传输到Splunk并正确解析",
+          "dependencies": ["4"]
+        },
+        {
+          "id": "7", 
+          "title": "AWS CloudWatch Logs集成",
+          "description": "建立AWS CloudWatch Logs与Splunk的数据连接",
+          "status": "pending",
+          "priority": "high",
+          "details": "配置CloudWatch Logs API集成，设置日志流过滤器和数据转换规则，优化传输性能",
+          "testStrategy": "验证CloudWatch日志能够正确传输和索引到Splunk",
+          "dependencies": ["4"]
+        },
+        {
+          "id": "8",
+          "title": "EC2实例日志收集配置", 
+          "description": "在EC2实例上部署Universal Forwarder，收集操作系统和应用日志",
+          "status": "pending",
+          "priority": "high",
+          "details": "通过GitHub Actions自动化部署Splunk Universal Forwarder到EC2实例，设置日志收集规则、数据过滤和压缩",
+          "testStrategy": "验证EC2实例日志能够正确转发到EKS上的Splunk索引器",
+          "dependencies": ["4"]
+        },
+        {
+          "id": "9",
+          "title": "数据解析和规范化",
+          "description": "配置数据解析规则，实现日志数据的标准化和规范化处理",
+          "status": "pending", 
+          "priority": "medium",
+          "details": "创建自定义解析规则、字段提取配置、数据模型映射，确保CIM合规性",
+          "testStrategy": "验证各种日志源的数据能够正确解析和标准化",
+          "dependencies": ["6", "7", "8"]
+        },
+        {
+          "id": "10",
+          "title": "暴力破解攻击检测规则",
+          "description": "开发针对EC2实例暴力破解攻击的检测规则和告警机制", 
+          "status": "pending",
+          "priority": "high",
+          "details": "分析登录失败模式，创建基于阈值和时间窗口的检测规则，配置实时告警",
+          "testStrategy": "模拟暴力破解攻击，验证检测规则的准确性和响应时间",
+          "dependencies": ["9"]
+        },
+        {
+          "id": "11",
+          "title": "Root用户活动监控规则",
+          "description": "实现AWS环境中敏感Root用户活动的监控和告警",
+          "status": "pending",
+          "priority": "high", 
+          "details": "创建Root用户行为基线，设置异常活动检测规则，包括权限提升、资源创建等",
+          "testStrategy": "模拟敏感Root用户操作，验证监控规则的有效性",
+          "dependencies": ["9"]
+        },
+        {
+          "id": "12",
+          "title": "异常资源使用检测",
+          "description": "开发检测AWS云环境中异常资源使用模式的规则",
+          "status": "pending",
+          "priority": "medium",
+          "details": "分析资源使用基线，创建异常检测算法，识别可疑的资源消耗模式",
+          "testStrategy": "创建异常资源使用场景，验证检测规则的敏感性和准确性",
+          "dependencies": ["9"]
+        },
+        {
+          "id": "13",
+          "title": "安全仪表板和可视化",
+          "description": "创建统一的安全事件仪表板和可视化界面",
+          "status": "pending",
+          "priority": "medium",
+          "details": "设计和实现安全运营中心(SOC)仪表板，包括实时威胁监控、趋势分析、关键指标展示",
+          "testStrategy": "验证仪表板数据准确性、响应性能和用户体验",
+          "dependencies": ["10", "11", "12"]
+        },
+        {
+          "id": "14", 
+          "title": "告警和通知系统",
+          "description": "配置自动化告警和通知机制，确保及时响应安全事件",
+          "status": "pending",
+          "priority": "high",
+          "details": "集成AWS SNS/SES进行邮件通知、Slack集成、告警优先级分类、升级机制",
+          "testStrategy": "触发各类安全事件，验证告警通知的及时性和准确性",
+          "dependencies": ["10", "11", "12"]
+        },
+        {
+          "id": "15",
+          "title": "规则测试和优化框架",
+          "description": "建立安全规则的测试框架，用于验证和优化检测规则",
+          "status": "pending",
+          "priority": "medium",
+          "details": "创建自动化测试脚本、攻击模拟环境、规则性能评估工具，集成到GitHub Actions",
+          "testStrategy": "执行全面的规则测试，评估误报率、漏报率和性能影响",
+          "dependencies": ["10", "11", "12"]
+        },
+        {
+          "id": "16",
+          "title": "性能调优和扩展配置",
+          "description": "优化Splunk系统性能，配置AWS自动扩展和负载均衡",
+          "status": "pending",
+          "priority": "low",
+          "details": "分析CloudWatch性能指标，优化索引策略、搜索性能、资源分配，配置EKS水平扩展",
+          "testStrategy": "进行负载测试，验证系统在高数据量下的性能和稳定性",
+          "dependencies": ["13", "14", "15"]
+        }
+      ]
+    }
+  }
+}

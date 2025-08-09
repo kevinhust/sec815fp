@@ -1,0 +1,267 @@
+name: Deploy SIEM to AWS EKS
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    outputs:
+      tfplan: ${{ steps.plan.outputs.stdout }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_DEFAULT_REGION }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+    
+    - name: Terraform Plan
+      id: plan
+      working-directory: ./terraform
+      run: |
+        terraform plan -no-color -input=false \
+          -var="cluster_name=${{ env.EKS_CLUSTER_NAME }}" \
+          -var="region=${{ env.AWS_DEFAULT_REGION }}"
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_DEFAULT_REGION }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+    
+    - name: Terraform Apply
+      working-directory: ./terraform
+      run: |
+        terraform apply -auto-approve -input=false \
+          -var="cluster_name=${{ env.EKS_CLUSTER_NAME }}" \
+          -var="region=${{ env.AWS_DEFAULT_REGION }}"
+
+  deploy-splunk:
+    name: Deploy Splunk to EKS
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_DEFAULT_REGION }}
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.12.0'
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_DEFAULT_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+    
+    - name: Verify cluster connection
+      run: |
+        kubectl cluster-info
+        kubectl get nodes
+    
+    - name: Install Splunk Operator
+      run: |
+        kubectl apply -f https://github.com/splunk/splunk-operator/releases/download/2.4.0/splunk-operator-cluster.yaml
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=splunk-operator -n splunk-operator --timeout=300s
+    
+    - name: Create Splunk namespace
+      run: |
+        kubectl create namespace splunk-enterprise --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Create Splunk secrets
+      run: |
+        # Create secrets for Splunk configuration
+        kubectl create secret generic splunk-secret \
+          --from-literal=password=${{ secrets.SPLUNK_ADMIN_PASSWORD }} \
+          --from-literal=hec_token=${{ secrets.SPLUNK_HEC_TOKEN || 'auto-generated' }} \
+          --from-literal=license_type=${{ secrets.SPLUNK_LICENSE_TYPE || 'free' }} \
+          -n splunk-enterprise --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Create license secret only if using Enterprise trial
+        if [ "${{ secrets.SPLUNK_LICENSE_KEY }}" != "" ]; then
+          kubectl create secret generic splunk-license \
+            --from-literal=license_key=${{ secrets.SPLUNK_LICENSE_KEY }} \
+            -n splunk-enterprise --dry-run=client -o yaml | kubectl apply -f -
+        fi
+    
+    - name: Deploy Splunk Enterprise
+      run: |
+        kubectl apply -f k8s/splunk-enterprise.yaml -n splunk-enterprise
+    
+    - name: Wait for Splunk deployment
+      run: |
+        kubectl wait --for=condition=ready standalone --all -n splunk-enterprise --timeout=900s
+        kubectl get pods -n splunk-enterprise
+    
+    - name: Get Splunk service details
+      run: |
+        kubectl get services -n splunk-enterprise
+        echo "Splunk Web URL:"
+        kubectl get service splunk-web -n splunk-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+  configure-data-inputs:
+    name: Configure Data Inputs
+    runs-on: ubuntu-latest
+    needs: deploy-splunk
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_DEFAULT_REGION }}
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_DEFAULT_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+    
+    - name: Configure CloudTrail input
+      run: |
+        kubectl exec -n splunk-enterprise deployment/splunk-standalone -- \
+          /opt/splunk/bin/splunk add monitor /aws/cloudtrail \
+          -index cloudtrail -sourcetype aws:cloudtrail \
+          -auth admin:${{ secrets.SPLUNK_ADMIN_PASSWORD }}
+    
+    - name: Configure CloudWatch input
+      run: |
+        kubectl exec -n splunk-enterprise deployment/splunk-standalone -- \
+          /opt/splunk/bin/splunk add monitor /aws/cloudwatch \
+          -index cloudwatch -sourcetype aws:cloudwatch \
+          -auth admin:${{ secrets.SPLUNK_ADMIN_PASSWORD }}
+    
+    - name: Install security apps
+      run: |
+        # Install Common Information Model (CIM)
+        kubectl exec -n splunk-enterprise deployment/splunk-standalone -- \
+          /opt/splunk/bin/splunk install app /tmp/Splunk_SA_CIM.tgz \
+          -auth admin:${{ secrets.SPLUNK_ADMIN_PASSWORD }}
+        
+        # Restart Splunk to apply changes
+        kubectl exec -n splunk-enterprise deployment/splunk-standalone -- \
+          /opt/splunk/bin/splunk restart
+
+  deploy-universal-forwarders:
+    name: Deploy Universal Forwarders
+    runs-on: ubuntu-latest
+    needs: configure-data-inputs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_DEFAULT_REGION }}
+    
+    - name: Deploy Universal Forwarders to EC2
+      run: |
+        # This would typically use AWS Systems Manager or Ansible
+        # to deploy Universal Forwarders to EC2 instances
+        echo "Deploying Universal Forwarders to EC2 instances..."
+        
+        # Example using AWS Systems Manager
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=["curl -O https://download.splunk.com/products/universalforwarder/releases/9.1.0/linux/splunkforwarder-9.1.0-linux-2.6-x86_64.rpm","rpm -i splunkforwarder-9.1.0-linux-2.6-x86_64.rpm"]' \
+          --targets "Key=tag:Environment,Values=SIEM"
+
+  notify-completion:
+    name: Notify Deployment Completion
+    runs-on: ubuntu-latest
+    needs: [deploy-universal-forwarders]
+    if: always()
+    
+    steps:
+    - name: Send Slack notification
+      if: env.SLACK_WEBHOOK_URL != ''
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: ${{ secrets.SLACK_CHANNEL }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    
+    - name: Send email notification
+      if: env.AWS_SES_SMTP_USERNAME != ''
+      run: |
+        echo "SIEM deployment completed with status: ${{ job.status }}" | \
+        aws ses send-email \
+          --from "noreply@yourcompany.com" \
+          --to ${{ secrets.NOTIFICATION_EMAIL }} \
+          --subject "SIEM Deployment Status" \
+          --text "SIEM deployment completed with status: ${{ job.status }}"
+      env:
+        AWS_SES_SMTP_USERNAME: ${{ secrets.AWS_SES_SMTP_USERNAME }}
+        AWS_SES_SMTP_PASSWORD: ${{ secrets.AWS_SES_SMTP_PASSWORD }}

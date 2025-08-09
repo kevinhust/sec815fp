@@ -1,0 +1,168 @@
+<context>
+# Overview  
+This project aims to implement a comprehensive SIEM (Security Information and Event Management) system using Splunk Enterprise to achieve centralized monitoring, analysis, and response capabilities for organizational security events. The goal is to enhance overall security posture and effectively identify, warn, and mitigate potential network threats through automated deployment and intelligent threat detection.
+
+# Core Features  
+## 1. Rapid Deployment and Stable Operation
+- Automated Splunk Enterprise SIEM system deployment using open-source tools (Splunk Operator for Kubernetes)
+- High availability and stability configuration
+- Monitoring and alerting for system health
+
+## 2. Comprehensive Data Integration  
+- Integration of AWS EC2 instance operating system logs and login logs
+- AWS cloud service logs integration (CloudTrail, CloudWatch Logs)
+- Real-time, accurate data ingestion into Splunk SIEM
+- Data parsing and normalization
+
+## 3. Effective Threat Detection
+- Development and deployment of critical security detection rules
+- Brute force attack detection for EC2 instances
+- Sensitive root user activity monitoring in AWS cloud environment
+- Abnormal resource usage detection
+
+## 4. Rule Validation and Optimization
+- Comprehensive testing of created security rules
+- Attack scenario simulation for rule effectiveness validation
+- Iterative rule optimization to reduce false positives
+- Threat identification accuracy improvement
+
+## 5. Enhanced Security Visibility
+- Unified security event dashboard
+- Real-time security status monitoring
+- Data support for incident investigation and response
+- Reporting and analytics capabilities
+
+# User Experience  
+## User Personas
+- Security Operations Center (SOC) analysts
+- Security administrators
+- Incident response teams
+- IT operations personnel
+
+## Key User Flows
+- Real-time threat monitoring and alerting
+- Security incident investigation workflows
+- Rule management and customization
+- Dashboard and report generation
+</context>
+<PRD>
+# Technical Architecture  
+## System Components
+- Splunk Enterprise deployment on Kubernetes cluster
+- Splunk Universal Forwarders for log collection
+- AWS CloudTrail and CloudWatch integration
+- Custom security applications and dashboards
+- Alert management and notification systems
+
+## Data Models
+- Common Information Model (CIM) compliance
+- Custom data models for AWS-specific events
+- Normalized security event schemas
+- User and entity behavior analytics (UEBA) data structures
+
+## APIs and Integrations
+- AWS CloudTrail API integration
+- AWS CloudWatch Logs API integration
+- EC2 instance log collection via Universal Forwarders
+- REST API endpoints for external integrations
+- SMTP integration for alert notifications
+
+## Infrastructure Requirements
+- AWS EKS (Elastic Kubernetes Service) cluster with minimum 3 worker nodes
+- AWS EBS (Elastic Block Store) for persistent storage
+- AWS VPC with proper security groups and network ACLs
+- AWS ALB (Application Load Balancer) for high availability
+- AWS S3 buckets for backup and data archiving
+- AWS IAM roles and policies for service authentication
+- GitHub Actions for CI/CD pipeline automation
+- AWS Systems Manager Parameter Store for secrets management
+
+# Development Roadmap  
+## Phase 1: Foundation Setup (MVP)
+- AWS EKS cluster setup with Terraform/CloudFormation
+- GitHub Actions CI/CD pipeline configuration
+- AWS IAM roles and security policies setup
+- Splunk Operator deployment via GitHub Actions
+- Basic Splunk Enterprise instance deployment
+- Initial system health monitoring and logging
+
+## Phase 2: Core Data Integration
+- AWS CloudTrail integration setup
+- AWS CloudWatch Logs integration
+- EC2 Universal Forwarder deployment
+- Basic data parsing and indexing configuration
+
+## Phase 3: Security Detection Implementation
+- Brute force attack detection rules
+- Root user activity monitoring rules
+- Abnormal resource usage detection rules
+- Basic alerting mechanisms
+
+## Phase 4: Advanced Features and Optimization
+- Custom dashboards and visualizations
+- Advanced search and reporting capabilities
+- Rule optimization and false positive reduction
+- Performance tuning and scaling
+
+## Phase 5: Validation and Testing
+- Comprehensive rule testing framework
+- Attack simulation scenarios
+- Performance and load testing
+- Security assessment and penetration testing
+
+# Logical Dependency Chain
+## Foundation First
+1. Infrastructure setup (Kubernetes cluster)
+2. Splunk deployment and basic configuration
+3. Network connectivity and security setup
+
+## Data Pipeline Establishment
+4. AWS service integrations (CloudTrail, CloudWatch)
+5. EC2 log collection setup
+6. Data parsing and normalization
+
+## Security Intelligence Building
+7. Basic detection rule implementation
+8. Advanced threat detection capabilities
+9. Alert and notification systems
+
+## Optimization and Validation
+10. Rule testing and optimization
+11. Performance tuning
+12. Comprehensive validation testing
+
+# Risks and Mitigations  
+## Technical Challenges
+- **Risk**: Complex Kubernetes deployment and management
+- **Mitigation**: Use proven Splunk Operator and follow best practices, implement proper monitoring
+
+- **Risk**: AWS API rate limiting and data volume management
+- **Mitigation**: Implement proper data filtering, use multiple API keys, implement retry mechanisms
+
+- **Risk**: High false positive rates in detection rules
+- **Mitigation**: Implement baseline analysis, gradual rule tuning, comprehensive testing
+
+## Resource Constraints
+- **Risk**: Insufficient storage and compute resources
+- **Mitigation**: Proper capacity planning, auto-scaling configuration, data lifecycle management
+
+- **Risk**: Network bandwidth limitations
+- **Mitigation**: Data compression, selective log forwarding, efficient indexing strategies
+
+## Security and Compliance
+- **Risk**: Security configuration vulnerabilities
+- **Mitigation**: Security hardening guidelines, regular security assessments, compliance checks
+
+# Appendix  
+## Research Findings
+- Splunk best practices for AWS environments
+- Common attack patterns and detection methods
+- Performance optimization techniques
+- Industry compliance requirements (SOC 2, PCI DSS, etc.)
+
+## Technical Specifications
+- Minimum system requirements for Splunk Enterprise
+- AWS service limitations and quotas
+- Network security requirements
+- Data retention and backup policies
+</PRD>

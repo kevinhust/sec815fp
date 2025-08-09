@@ -1,0 +1,199 @@
+apiVersion: enterprise.splunk.com/v4
+kind: Standalone
+metadata:
+  name: splunk-standalone
+  namespace: splunk-enterprise
+spec:
+  # Image configuration for Splunk Enterprise
+  image: splunk/splunk:9.1.0
+  
+  # Resources configuration
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  
+  # Storage configuration using AWS EBS
+  volumes:
+    - name: opt-splunk-var
+      storageClassName: gp3
+      size: 100Gi
+    - name: opt-splunk-etc
+      storageClassName: gp3
+      size: 10Gi
+  
+  # Splunk configuration
+  spec:
+    # Use free license by default (can be overridden)
+    license:
+      free: true
+    
+    # Admin password from secret
+    password:
+      secretRef:
+        name: splunk-secret
+        key: password
+    
+    # Default configurations for free version
+    defaults: |
+      # Basic Splunk configuration
+      [general]
+      serverName = splunk-siem-server
+      
+      # Web interface configuration
+      [httpServer]
+      max_content_length = 838860800
+      
+      # Input configuration for AWS integration
+      [tcpout]
+      disabled = false
+      
+      # Enable HTTP Event Collector
+      [http]
+      disabled = 0
+      port = 8088
+      enableSSL = 0
+      
+      # Basic indexing configuration
+      [index]
+      maxDataSize = auto_high_volume
+      maxHotBuckets = 10
+      maxWarmDBCount = 300
+    
+    # Additional apps and configurations
+    apps:
+      # Common Information Model for security data normalization
+      - name: "Splunk_SA_CIM"
+        location: "/tmp/Splunk_SA_CIM.spl"
+      
+      # AWS Add-on for CloudTrail and CloudWatch integration
+      - name: "Splunk_TA_aws"
+        location: "/tmp/Splunk_TA_aws.spl"
+    
+    # Service configuration
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+      ports:
+        - name: web
+          port: 8000
+          targetPort: 8000
+        - name: hec
+          port: 8088
+          targetPort: 8088
+        - name: splunkd
+          port: 8089
+          targetPort: 8089
+        - name: indexer
+          port: 9997
+          targetPort: 9997
+    
+    # Environment variables for configuration
+    env:
+      - name: SPLUNK_START_ARGS
+        value: "--accept-license --answer-yes"
+      - name: SPLUNK_LICENSE_TYPE
+        valueFrom:
+          secretKeyRef:
+            name: splunk-secret
+            key: license_type
+            optional: true
+      - name: SPLUNK_HEC_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: splunk-secret
+            key: hec_token
+            optional: true
+      - name: SPLUNK_HEC_SSL
+        value: "false"
+      - name: SPLUNK_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: splunk-secret
+            key: password
+
+---
+# ConfigMap for additional Splunk configurations
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: splunk-config
+  namespace: splunk-enterprise
+data:
+  # AWS CloudTrail input configuration
+  aws_cloudtrail_inputs.conf: |
+    [aws_cloudtrail://cloudtrail-input]
+    aws_account_id = YOUR_AWS_ACCOUNT_ID
+    aws_iam_role = arn:aws:iam::YOUR_ACCOUNT_ID:role/SplunkCloudTrailRole
+    ct_blacklist = 
+    ct_excluded_events_index = 
+    ct_max_items = 50000
+    ct_max_retries = 3
+    ct_whitelist = 
+    disabled = 0
+    exclude_describe_events = true
+    exclude_get_events = true
+    exclude_list_events = true
+    index = cloudtrail
+    interval = 300
+    sourcetype = aws:cloudtrail
+    start_date = 2024-01-01
+  
+  # AWS CloudWatch input configuration  
+  aws_cloudwatch_inputs.conf: |
+    [aws_cloudwatch://cloudwatch-input]
+    aws_account_id = YOUR_AWS_ACCOUNT_ID
+    aws_iam_role = arn:aws:iam::YOUR_ACCOUNT_ID:role/SplunkCloudWatchRole
+    disabled = 0
+    index = cloudwatch
+    interval = 300
+    metric_dimensions = *
+    metric_names = *
+    metric_namespace = AWS/EC2,AWS/EKS,AWS/ApplicationELB
+    period = 300
+    region = us-east-1
+    sourcetype = aws:cloudwatch
+    statistics = Average,Sum,SampleCount,Maximum,Minimum
+  
+  # Security detection searches
+  security_searches.conf: |
+    # Brute force detection for EC2 instances
+    [Brute Force SSH Attempts]
+    search = index=linux sourcetype=linux_secure "Failed password" 
+           | stats count by src_ip, dest_host 
+           | where count > 10 
+           | eval severity="high"
+    
+    # Root user activity monitoring
+    [AWS Root User Activity]
+    search = index=cloudtrail sourcetype=aws:cloudtrail userIdentity.type=Root 
+           | eval severity="critical"
+           | table _time, sourceIPAddress, eventName, userIdentity.type, severity
+    
+    # Unusual resource usage patterns
+    [Unusual EC2 Instance Launch]
+    search = index=cloudtrail sourcetype=aws:cloudtrail eventName=RunInstances 
+           | eval hour=strftime(_time,"%H") 
+           | where hour > 22 OR hour < 6 
+           | eval severity="medium"
+
+---
+# Service Monitor for Prometheus integration (optional)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: splunk-metrics
+  namespace: splunk-enterprise
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: splunk
+  endpoints:
+  - port: web
+    path: /services/collector/health/1.0
+    interval: 30s
