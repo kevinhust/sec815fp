@@ -182,9 +182,7 @@ resource "aws_eks_cluster" "siem_cluster" {
     security_group_ids      = [aws_security_group.siem_cluster_sg.id]
   }
 
-  depends_on = [
-    aws_iam_role_policy_attachment.siem_cluster_policy,
-  ]
+  # IAM roles and policies already exist
 
   tags = {
     Name    = var.cluster_name
@@ -235,7 +233,7 @@ output "cluster_security_group_id" {
 
 output "cluster_iam_role_name" {
   description = "IAM role name associated with EKS cluster"
-  value       = aws_iam_role.siem_cluster_role.name
+  value       = data.aws_iam_role.siem_cluster_role.name
 }
 
 output "cluster_certificate_authority_data" {
