@@ -208,11 +208,7 @@ resource "aws_eks_node_group" "siem_nodes" {
     max_unavailable = 1
   }
 
-  depends_on = [
-    aws_iam_role_policy_attachment.siem_node_worker_policy,
-    aws_iam_role_policy_attachment.siem_node_cni_policy,
-    aws_iam_role_policy_attachment.siem_node_registry_policy,
-  ]
+  # IAM roles and policies already exist
 
   tags = {
     Name    = "${var.cluster_name}-nodes"
