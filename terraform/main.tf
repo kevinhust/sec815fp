@@ -63,138 +63,49 @@ variable "node_instance_types" {
   default     = ["t3.medium"]
 }
 
-# VPC Configuration
-resource "aws_vpc" "siem_vpc" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name                                        = "${var.cluster_name}-vpc"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-    Project                                     = "SIEM"
+# Use existing VPC
+data "aws_vpc" "siem_vpc" {
+  filter {
+    name   = "tag:Name"
+    values = ["siem-eks-cluster-vpc"]
+  }
+  filter {
+    name   = "state"
+    values = ["available"]
   }
 }
 
-# Internet Gateway
-resource "aws_internet_gateway" "siem_igw" {
-  vpc_id = aws_vpc.siem_vpc.id
+# Network infrastructure already exists in the VPC
 
-  tags = {
-    Name    = "${var.cluster_name}-igw"
-    Project = "SIEM"
+# Use existing subnets
+data "aws_subnets" "siem_public_subnets" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.siem_vpc.id]
+  }
+  filter {
+    name   = "tag:kubernetes.io/role/elb"
+    values = ["1"]
   }
 }
 
-# Public Subnets
-resource "aws_subnet" "siem_public_subnets" {
-  count = 2
-
-  vpc_id                  = aws_vpc.siem_vpc.id
-  cidr_block              = "10.0.${count.index + 1}.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name                                        = "${var.cluster_name}-public-subnet-${count.index + 1}"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-    "kubernetes.io/role/elb"                    = "1"
-    Project                                     = "SIEM"
+data "aws_subnets" "siem_private_subnets" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.siem_vpc.id]
+  }
+  filter {
+    name   = "tag:kubernetes.io/role/internal-elb"
+    values = ["1"]
   }
 }
 
-# Private Subnets
-resource "aws_subnet" "siem_private_subnets" {
-  count = 2
-
-  vpc_id            = aws_vpc.siem_vpc.id
-  cidr_block        = "10.0.${count.index + 10}.0/24"
-  availability_zone = data.aws_availability_zones.available.names[count.index]
-
-  tags = {
-    Name                                        = "${var.cluster_name}-private-subnet-${count.index + 1}"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-    "kubernetes.io/role/internal-elb"           = "1"
-    Project                                     = "SIEM"
-  }
-}
-
-# NAT Gateway for private subnets
-resource "aws_eip" "siem_nat_eip" {
-  count  = 2
-  domain = "vpc"
-
-  tags = {
-    Name    = "${var.cluster_name}-nat-eip-${count.index + 1}"
-    Project = "SIEM"
-  }
-
-  depends_on = [aws_internet_gateway.siem_igw]
-}
-
-resource "aws_nat_gateway" "siem_nat_gw" {
-  count = 2
-
-  allocation_id = aws_eip.siem_nat_eip[count.index].id
-  subnet_id     = aws_subnet.siem_public_subnets[count.index].id
-
-  tags = {
-    Name    = "${var.cluster_name}-nat-gw-${count.index + 1}"
-    Project = "SIEM"
-  }
-
-  depends_on = [aws_internet_gateway.siem_igw]
-}
-
-# Route Tables
-resource "aws_route_table" "siem_public_rt" {
-  vpc_id = aws_vpc.siem_vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.siem_igw.id
-  }
-
-  tags = {
-    Name    = "${var.cluster_name}-public-rt"
-    Project = "SIEM"
-  }
-}
-
-resource "aws_route_table" "siem_private_rt" {
-  count  = 2
-  vpc_id = aws_vpc.siem_vpc.id
-
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.siem_nat_gw[count.index].id
-  }
-
-  tags = {
-    Name    = "${var.cluster_name}-private-rt-${count.index + 1}"
-    Project = "SIEM"
-  }
-}
-
-# Route Table Associations
-resource "aws_route_table_association" "siem_public_rta" {
-  count = 2
-
-  subnet_id      = aws_subnet.siem_public_subnets[count.index].id
-  route_table_id = aws_route_table.siem_public_rt.id
-}
-
-resource "aws_route_table_association" "siem_private_rta" {
-  count = 2
-
-  subnet_id      = aws_subnet.siem_private_subnets[count.index].id
-  route_table_id = aws_route_table.siem_private_rt[count.index].id
-}
+# Network routing already configured in existing VPC
 
 # Security Group for EKS Cluster
 resource "aws_security_group" "siem_cluster_sg" {
   name_prefix = "${var.cluster_name}-cluster-sg"
-  vpc_id      = aws_vpc.siem_vpc.id
+  vpc_id      = data.aws_vpc.siem_vpc.id
 
   egress {
     from_port   = 0
@@ -212,7 +123,7 @@ resource "aws_security_group" "siem_cluster_sg" {
 # Security Group for EKS Worker Nodes
 resource "aws_security_group" "siem_node_sg" {
   name_prefix = "${var.cluster_name}-node-sg"
-  vpc_id      = aws_vpc.siem_vpc.id
+  vpc_id      = data.aws_vpc.siem_vpc.id
 
   ingress {
     from_port = 0
@@ -248,76 +159,24 @@ resource "aws_security_group" "siem_node_sg" {
   }
 }
 
-# IAM Role for EKS Cluster
-resource "aws_iam_role" "siem_cluster_role" {
+# Use existing IAM Role for EKS Cluster
+data "aws_iam_role" "siem_cluster_role" {
   name = "${var.cluster_name}-cluster-role"
-
-  assume_role_policy = jsonencode({
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "eks.amazonaws.com"
-      }
-    }]
-    Version = "2012-10-17"
-  })
-
-  tags = {
-    Name    = "${var.cluster_name}-cluster-role"
-    Project = "SIEM"
-  }
 }
 
-resource "aws_iam_role_policy_attachment" "siem_cluster_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.siem_cluster_role.name
-}
-
-# IAM Role for EKS Worker Nodes
-resource "aws_iam_role" "siem_node_role" {
+# Use existing IAM Role for EKS Worker Nodes
+data "aws_iam_role" "siem_node_role" {
   name = "${var.cluster_name}-node-role"
-
-  assume_role_policy = jsonencode({
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-    Version = "2012-10-17"
-  })
-
-  tags = {
-    Name    = "${var.cluster_name}-node-role"
-    Project = "SIEM"
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "siem_node_worker_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.siem_node_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "siem_node_cni_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.siem_node_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "siem_node_registry_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.siem_node_role.name
 }
 
 # EKS Cluster
 resource "aws_eks_cluster" "siem_cluster" {
   name     = var.cluster_name
-  role_arn = aws_iam_role.siem_cluster_role.arn
+  role_arn = data.aws_iam_role.siem_cluster_role.arn
   version  = "1.28"
 
   vpc_config {
-    subnet_ids              = concat(aws_subnet.siem_private_subnets[*].id, aws_subnet.siem_public_subnets[*].id)
+    subnet_ids              = concat(data.aws_subnets.siem_private_subnets.ids, data.aws_subnets.siem_public_subnets.ids)
     endpoint_private_access = true
     endpoint_public_access  = true
     security_group_ids      = [aws_security_group.siem_cluster_sg.id]
@@ -337,8 +196,8 @@ resource "aws_eks_cluster" "siem_cluster" {
 resource "aws_eks_node_group" "siem_nodes" {
   cluster_name    = aws_eks_cluster.siem_cluster.name
   node_group_name = "${var.cluster_name}-nodes"
-  node_role_arn   = aws_iam_role.siem_node_role.arn
-  subnet_ids      = aws_subnet.siem_private_subnets[*].id
+  node_role_arn   = data.aws_iam_role.siem_node_role.arn
+  subnet_ids      = data.aws_subnets.siem_private_subnets.ids
   instance_types  = var.node_instance_types
 
   scaling_config {
@@ -386,7 +245,7 @@ output "cluster_certificate_authority_data" {
 
 output "cluster_iam_role_arn" {
   description = "IAM role ARN associated with EKS cluster"
-  value       = aws_iam_role.siem_cluster_role.arn
+  value       = data.aws_iam_role.siem_cluster_role.arn
 }
 
 output "node_groups" {
@@ -408,7 +267,7 @@ resource "aws_key_pair" "siem_key" {
 # Security Group for EC2 instances
 resource "aws_security_group" "siem_ec2_sg" {
   name_prefix = "${var.cluster_name}-ec2-sg"
-  vpc_id      = aws_vpc.siem_vpc.id
+  vpc_id      = data.aws_vpc.siem_vpc.id
 
   # SSH access
   ingress {
@@ -468,7 +327,7 @@ resource "aws_instance" "siem_server" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = "t3.medium"
   key_name               = aws_key_pair.siem_key.key_name
-  subnet_id              = aws_subnet.siem_public_subnets[0].id
+  subnet_id              = data.aws_subnets.siem_public_subnets.ids[0]
   vpc_security_group_ids = [aws_security_group.siem_ec2_sg.id]
 
   root_block_device {
@@ -496,7 +355,7 @@ resource "aws_instance" "client_1" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = "t3.micro"
   key_name               = aws_key_pair.siem_key.key_name
-  subnet_id              = aws_subnet.siem_public_subnets[0].id
+  subnet_id              = data.aws_subnets.siem_public_subnets.ids[0]
   vpc_security_group_ids = [aws_security_group.siem_ec2_sg.id]
 
   root_block_device {
@@ -526,7 +385,7 @@ resource "aws_instance" "client_2" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = "t3.micro"
   key_name               = aws_key_pair.siem_key.key_name
-  subnet_id              = aws_subnet.siem_public_subnets[1].id
+  subnet_id              = data.aws_subnets.siem_public_subnets.ids[1]
   vpc_security_group_ids = [aws_security_group.siem_ec2_sg.id]
 
   root_block_device {
@@ -554,7 +413,7 @@ resource "aws_instance" "client_2" {
 # Outputs
 output "vpc_id" {
   description = "ID of the VPC where the cluster is deployed"
-  value       = aws_vpc.siem_vpc.id
+  value       = data.aws_vpc.siem_vpc.id
 }
 
 output "siem_server_public_ip" {
