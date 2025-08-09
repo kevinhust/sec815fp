@@ -242,16 +242,14 @@ jobs:
     if: always()
     
     steps:
-    - name: Send Slack notification
-      if: env.SLACK_WEBHOOK_URL != ''
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        channel: ${{ secrets.SLACK_CHANNEL }}
-        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
-        fields: repo,message,commit,author,action,eventName,ref,workflow
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    - name: Log deployment status
+      run: |
+        echo "🎉 SIEM deployment completed with status: ${{ job.status }}"
+        echo "📊 Deployment summary:"
+        echo "   - Repository: ${{ github.repository }}"
+        echo "   - Branch: ${{ github.ref_name }}"
+        echo "   - Commit: ${{ github.sha }}"
+        echo "   - Workflow: ${{ github.workflow }}"
     
     - name: Send email notification
       if: env.AWS_SES_SMTP_USERNAME != ''
